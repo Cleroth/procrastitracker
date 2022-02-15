@@ -330,7 +330,10 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam) 
             break;
         case WM_DESTROY: PostQuitMessage(0); break;
         case WM_USER + 1:  // tray icon
-            if (lParam == WM_LBUTTONDBLCLK || lParam == WM_RBUTTONUP) {
+            if(lParam == WM_LBUTTONDBLCLK) {
+                DialogBox(hInst, MAKEINTRESOURCE(IDD_PROPPAGE_LARGE), hWnd, Stats);
+            }
+            else if (lParam == WM_RBUTTONUP) {
                 HMENU myMenu = CreatePopupMenu();
                 if (!myMenu) break;
 
