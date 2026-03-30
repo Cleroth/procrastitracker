@@ -453,8 +453,6 @@ int APIENTRY _tWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPTSTR lpCm
         return 0;
     }
     if (!ddeinit()) panic("PT: Cannot initialize DDE");
-    // This is for chrome only:
-    eventhookinit();
     WNDCLASSEX wcex;
     wcex.cbSize = sizeof(WNDCLASSEX);
     wcex.style = CS_HREDRAW | CS_VREDRAW;
@@ -517,7 +515,6 @@ int APIENTRY _tWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPTSTR lpCm
     killdatabasequeue();
     CreateTaskBarIcon(mainhwnd, NIM_DELETE, 3);
     ddeclean();
-    eventhookclean();
     #ifdef _DEBUG
         delete root;
         strpool.clear();
