@@ -59,7 +59,7 @@ tag tags[MAXTAGS] = {
     {"project 8", 0xB0B0B0, NULL, NULL},
 };
 
-const int FILE_FORMAT_VERSION = 14;
+const int FILE_FORMAT_VERSION = 15;
 
 extern char databasemain[];
 extern char databaseback[];

@@ -246,6 +246,7 @@ void addtodatabase(char *elements, SYSTEMTIME &st, DWORD idletime, DWORD awaysec
     EnterCriticalSection(&databaselock);
     node *n = root;
     for (char *rest = elements, *head; *rest;) {
+        if (n->flatten) break;
         head = rest;
         char *sep = NULL;
         int sepl = 0;

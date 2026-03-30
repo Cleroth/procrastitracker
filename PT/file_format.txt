@@ -4,13 +4,13 @@ See also nodedb.h load() and save() functions as an example.
 The whole file is written thru zlib, so can be read with that, or first unpacked with gzip
 
 struct DATABASE {
-	int version (== 13, as of June 9 2019, format may be different if other version)
+	int version (== 15, format may be different if other version)
 	int magic (== 'PTFF' on x86)
 	int numtags
 	struct { char name[32]; int color; } tags[numtags]
 	int minfilter
 	int foldlevel
-	int prefs[10] (see advanced prefs window, also see "prefs" in procrastitracker.cpp)
+	int prefs[11] (see advanced prefs window, also see "prefs" in procrastitracker.cpp)
 	NODE root
 }
 
@@ -18,6 +18,7 @@ struct NODE {
 	char *name (null terminated bytes)
 	int tagindex
 	char ishidden
+	char isflattened
 	int numberofdays
 	DAY days[numberofdays]
 	int numchildren

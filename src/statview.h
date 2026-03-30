@@ -83,6 +83,16 @@ void redrawtreeview() {
     InvalidateRect(treeview, &r, TRUE);
 }
 
+void syncflattencontrol(HWND hDlg) {
+    HWND flattencontrol = GetDlgItem(hDlg, IDC_CHECK_FLATTEN);
+    HWND flattenhistory = GetDlgItem(hDlg, IDC_BUTTON_FLATTENHISTORY);
+    bool enabled = selectednode && selectednode != root;
+    SendMessage(flattencontrol, BM_SETCHECK,
+                enabled && selectednode->flatten ? BST_CHECKED : BST_UNCHECKED, 0);
+    EnableWindow(flattencontrol, enabled);
+    EnableWindow(flattenhistory, enabled && (selectednode->onechild || selectednode->ht));
+}
+
 void recompaccum() {
     root->checkstrfilter(false);
     daydata d;
@@ -100,6 +110,7 @@ void rendertree(HWND hDlg, bool graphalso) {
     root->treeview(0, hDlg, NULL, TVI_ROOT);
     loopv(i, daystats) daystats[i].sum();
     LeaveCriticalSection(&databaselock);
+    syncflattencontrol(hDlg);
     if (graphalso) {
         RECT r;
         GetClientRect(hDlg, &r);
@@ -255,6 +266,7 @@ long handleNotify(HWND hWndDlg, int nIDCtrl, LPNMHDR pNMHDR) {
             LPNMTREEVIEW pnmtv = (LPNMTREEVIEW)pNMHDR;
             prevselectednode = selectednode;
             selectednode = (node *)pnmtv->itemNew.lParam;
+            syncflattencontrol(hWndDlg);
             break;
         }
         case TVN_ITEMEXPANDED: {
@@ -528,6 +540,31 @@ INT_PTR CALLBACK Stats(HWND hDlg, UINT message, WPARAM wParam, LPARAM lParam) {
                     SetFocus(taglist);
                     ListView_EditLabel(taglist, sel);
                     break;
+                }
+                case IDC_BUTTON_FLATTENHISTORY: {
+                    if (!selectednode || selectednode == root ||
+                        (!selectednode->onechild && !selectednode->ht)) {
+                        syncflattencontrol(hDlg);
+                        break;
+                    }
+                    flushdatabasequeue();
+                    EnterCriticalSection(&databaselock);
+                    selectednode->flattenhistory();
+                    LeaveCriticalSection(&databaselock);
+                    rendertree(hDlg, false);
+                    return (INT_PTR)TRUE;
+                }
+                case IDC_CHECK_FLATTEN: {
+                    if (!selectednode || selectednode == root) {
+                        syncflattencontrol(hDlg);
+                        break;
+                    }
+                    flushdatabasequeue();
+                    EnterCriticalSection(&databaselock);
+                    selectednode->flatten = IsDlgButtonChecked(hDlg, IDC_CHECK_FLATTEN) == BST_CHECKED;
+                    LeaveCriticalSection(&databaselock);
+                    rendertree(hDlg, false);
+                    return (INT_PTR)TRUE;
                 }
                 case IDC_CHECK1: {
                     int sel = SendMessage(taglist, LVM_GETNEXTITEM, -1, LVNI_FOCUSED);

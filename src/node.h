@@ -24,6 +24,7 @@ struct node : SlabAllocated<node> {
     daydata accum;
     tagstat *ts;
     bool hidden;
+    bool flatten;
     bool expanded;
     bool instrfilter;
 
@@ -36,6 +37,7 @@ struct node : SlabAllocated<node> {
           parent(_p),
           ts(NULL),
           hidden(false),
+          flatten(false),
           expanded(false),
           instrfilter(true) {}
 
@@ -170,6 +172,7 @@ struct node : SlabAllocated<node> {
         gzwrite_s(f, nname, (int)strlen(nname) + 1);
         wint(f, tag);
         gzputc(f, hidden);
+        gzputc(f, flatten);
         if (filtered) {
             Vector<lday *> infilter;
             if (node_is_in_filter()) {
@@ -213,6 +216,8 @@ struct node : SlabAllocated<node> {
         if (version >= 3) tag = rint(f);
         // FF: char ishidden
         if (version >= 7) hidden = gzgetc_s(f) != 0;
+        // FF: char isflattened
+        if (version >= 15) flatten = gzgetc_s(f) != 0;
         // FF: int numberofdays
         int numdays = rint(f);
         if (numdays) {
@@ -320,7 +325,8 @@ struct node : SlabAllocated<node> {
         String full(concat);
         if (*concat) full.Cat(" - ");
         full.Cat(nname);
-        if (onechild && !last && this->parent && this->parent->parent)
+        if (flatten) full.Cat(" [Flatten]");
+        if (onechild && !last && !flatten && this->parent && this->parent->parent)
             return onechild->treeview(depth, hWnd, parent, after, timelevel, full);
         String s;
         accum.format(s, timelevel);
@@ -395,6 +401,23 @@ struct node : SlabAllocated<node> {
                 merge(*n);
                 parent->remove(n);
             }
+        }
+    }
+
+    void flattenhistory() {
+        if (onechild) {
+            onechild->flattenhistory();
+            merge(*onechild);
+            DELETEP(onechild);
+        } else if (ht) {
+            Vector<node *> v;
+            ht->getelements(v);
+            loopv(i, v) {
+                v[i]->flattenhistory();
+                merge(*v[i]);
+            }
+            v.setsize_nd(0);
+            DELETEP(ht);
         }
     }
 
