@@ -93,10 +93,13 @@ void recompaccum() {
 }
 
 void rendertree(HWND hDlg, bool graphalso) {
+    flushdatabasequeue();
+    EnterCriticalSection(&databaselock);
     recompaccum();
     TreeView_DeleteAllItems(treeview);
     root->treeview(0, hDlg, NULL, TVI_ROOT);
     loopv(i, daystats) daystats[i].sum();
+    LeaveCriticalSection(&databaselock);
     if (graphalso) {
         RECT r;
         GetClientRect(hDlg, &r);
@@ -151,12 +154,16 @@ long handleCustomDraw(HWND hWndTreeView, LPNMTVCUSTOMDRAW pNMTVCD) {
 
 bool ApplyTagToNode(HWND hDlg) {
     int sel = SendMessage(taglist, LVM_GETNEXTITEM, -1, LVNI_FOCUSED);
+    bool changed = false;
+    flushdatabasequeue();
+    EnterCriticalSection(&databaselock);
     if (sel >= 0 && selectednode && sel != selectednode->tag) {
         selectednode->tag = sel;
-        rendertree(hDlg, true);
-        return true;
+        changed = true;
     }
-    return false;
+    LeaveCriticalSection(&databaselock);
+    if (changed) rendertree(hDlg, true);
+    return changed;
 }
 
 long handleNotify(HWND hWndDlg, int nIDCtrl, LPNMHDR pNMHDR) {
@@ -181,38 +188,55 @@ long handleNotify(HWND hWndDlg, int nIDCtrl, LPNMHDR pNMHDR) {
                                 "Manual Override",
                                 "Enter percentage to scale this node by (100 = no change)", buf, 100, false,
                                 hWndDlg);
+                            flushdatabasequeue();
+                            EnterCriticalSection(&databaselock);
                             selectednode->changetime(atoi(buf));
+                            LeaveCriticalSection(&databaselock);
                             rendertree(hWndDlg, true);
                         }
                         return TRUE;
                     }
                     case 'H':
                         if (selectednode != root) {
+                            flushdatabasequeue();
+                            EnterCriticalSection(&databaselock);
                             selectednode->hidden = true;
+                            LeaveCriticalSection(&databaselock);
                             rendertree(hWndDlg, false);
                         }
                         return TRUE;
                     case 'U':
+                        flushdatabasequeue();
+                        EnterCriticalSection(&databaselock);
                         selectednode->clearhidden();
+                        LeaveCriticalSection(&databaselock);
                         rendertree(hWndDlg, false);
                         return TRUE;
                     case 'P':
                         if (selectednode != root) {
+                            flushdatabasequeue();
+                            EnterCriticalSection(&databaselock);
                             selectednode->firstinchain()->mergallsubstring();
+                            LeaveCriticalSection(&databaselock);
                             rendertree(hWndDlg, false);
                         }
                         return TRUE;
                     case 'M':
                         if (selectednode != root) {
                             if (prevselectednode) {
+                                flushdatabasequeue();
+                                EnterCriticalSection(&databaselock);
                                 prevselectednode = prevselectednode->firstinchain();
                                 selectednode = selectednode->firstinchain();
                                 if (prevselectednode != selectednode && prevselectednode->parent) {
                                     selectednode->merge(*prevselectednode);
                                     prevselectednode->parent->remove(prevselectednode);
                                     selectednode = prevselectednode = NULL;
+                                    LeaveCriticalSection(&databaselock);
                                     rendertree(hWndDlg, false);
+                                    return TRUE;
                                 }
+                                LeaveCriticalSection(&databaselock);
                             }
                         }
                         return TRUE;

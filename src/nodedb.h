@@ -1,8 +1,110 @@
 
+struct queueddbentry {
+    queueddbentry *next;
+    SYSTEMTIME st;
+    DWORD idletime;
+    DWORD awaysecs;
+    char elements[MAXTMPSTR * 3 + 16];
+};
+
+void addtodatabase(char *elements, SYSTEMTIME &st, DWORD idletime, DWORD awaysecs);
+
+CRITICAL_SECTION databaselock;
+CRITICAL_SECTION queuedblock;
+HANDLE queuedbworkevent = NULL;
+HANDLE queuedbidleevent = NULL;
+HANDLE queuedbthread = NULL;
+queueddbentry *queuedbhead = NULL;
+queueddbentry *queuedbtail = NULL;
+bool queuedbshutdown = false;
+
+DWORD WINAPI queueddatabaseproc(LPVOID) {
+    for (;;) {
+        WaitForSingleObject(queuedbworkevent, INFINITE);
+        for (;;) {
+            queueddbentry *entry = NULL;
+            bool shutdown = false;
+            EnterCriticalSection(&queuedblock);
+            if (queuedbhead) {
+                entry = queuedbhead;
+                queuedbhead = entry->next;
+                if (!queuedbhead) queuedbtail = NULL;
+            } else {
+                shutdown = queuedbshutdown;
+                if (!shutdown) ResetEvent(queuedbworkevent);
+                SetEvent(queuedbidleevent);
+            }
+            LeaveCriticalSection(&queuedblock);
+            if (!entry) {
+                if (shutdown) return 0;
+                break;
+            }
+            addtodatabase(entry->elements, entry->st, entry->idletime, entry->awaysecs);
+            delete entry;
+        }
+    }
+}
+
+void initdatabasequeue() {
+    InitializeCriticalSection(&databaselock);
+    InitializeCriticalSection(&queuedblock);
+    queuedbworkevent = CreateEvent(NULL, TRUE, FALSE, NULL);
+    queuedbidleevent = CreateEvent(NULL, TRUE, TRUE, NULL);
+    queuedbthread = CreateThread(NULL, 0, queueddatabaseproc, NULL, 0, NULL);
+    if (!queuedbworkevent || !queuedbidleevent || !queuedbthread) {
+        panic("PT: can't launch database queue thread");
+    }
+}
+
+void flushdatabasequeue() {
+    if (queuedbidleevent) WaitForSingleObject(queuedbidleevent, INFINITE);
+}
+
+void killdatabasequeue() {
+    if (!queuedbthread) return;
+    EnterCriticalSection(&queuedblock);
+    queuedbshutdown = true;
+    SetEvent(queuedbworkevent);
+    LeaveCriticalSection(&queuedblock);
+    WaitForSingleObject(queuedbthread, INFINITE);
+    CloseHandle(queuedbthread);
+    CloseHandle(queuedbworkevent);
+    CloseHandle(queuedbidleevent);
+    queuedbthread = NULL;
+    queuedbworkevent = NULL;
+    queuedbidleevent = NULL;
+    DeleteCriticalSection(&queuedblock);
+    DeleteCriticalSection(&databaselock);
+}
+
+void queueaddtodatabase(char *elements, SYSTEMTIME &st, DWORD idletime, DWORD awaysecs) {
+    if (!*elements) return;
+    queueddbentry *entry = new queueddbentry;
+    entry->next = NULL;
+    entry->st = st;
+    entry->idletime = idletime;
+    entry->awaysecs = awaysecs;
+    strncpy(entry->elements, elements, sizeof(entry->elements));
+    entry->elements[sizeof(entry->elements) - 1] = 0;
+    EnterCriticalSection(&queuedblock);
+    if (queuedbtail) {
+        queuedbtail->next = entry;
+    } else {
+        queuedbhead = entry;
+    }
+    queuedbtail = entry;
+    ResetEvent(queuedbidleevent);
+    SetEvent(queuedbworkevent);
+    LeaveCriticalSection(&queuedblock);
+}
+
 void save(bool filtered = false, char *givenfilename = NULL) {
+    flushdatabasequeue();
+    EnterCriticalSection(&databaselock);
     static int firstsave = TRUE;
     gzFile f = gzopen(givenfilename ? givenfilename : databasetemp, "wb1h");
     if (!f) panic("PT: could not open database file for writing");
+    if (filtered) recompaccum();
     wint(f, FILE_FORMAT_VERSION);
     wint(f, 'PTFF');
     wint(f, MAXTAGS);
@@ -34,6 +136,7 @@ void save(bool filtered = false, char *givenfilename = NULL) {
         }
         MoveFileA(databasetemp, databasemain);
     }
+    LeaveCriticalSection(&databaselock);
 }
 
 // NOTE: this function should only overwrite globals it gets by argument, see callers.
@@ -106,6 +209,9 @@ void load(node *root, char *fn, bool merge) {
 }
 
 void exporthtml(char *fn) {
+    flushdatabasequeue();
+    EnterCriticalSection(&databaselock);
+    recompaccum();
     FILE *f = fopen(fn, "w");
     if (f) {
         fprintf(f, "<!DOCTYPE html><HTML><HEAD><meta charset=\"utf-8\"/>"
@@ -114,12 +220,16 @@ void exporthtml(char *fn) {
         fprintf(f, "</BODY></HTML>");
         fclose(f);
     }
+    LeaveCriticalSection(&databaselock);
 }
 
 void mergedb(char *fn) {
     node *dbr = new node("(root)", NULL);
     load(dbr, fn, true);
+    flushdatabasequeue();
+    EnterCriticalSection(&databaselock);
     root->merge(*dbr);
+    LeaveCriticalSection(&databaselock);
     delete dbr;
 }
 
@@ -133,6 +243,7 @@ void dumpst(SYSTEMTIME st) {
 }
 
 void addtodatabase(char *elements, SYSTEMTIME &st, DWORD idletime, DWORD awaysecs) {
+    EnterCriticalSection(&databaselock);
     node *n = root;
     for (char *rest = elements, *head; *rest;) {
         head = rest;
@@ -180,4 +291,5 @@ void addtodatabase(char *elements, SYSTEMTIME &st, DWORD idletime, DWORD awaysec
         //dumpst(st);
     }
     n->hit(st, idletime, awaysecs);
+    LeaveCriticalSection(&databaselock);
 }

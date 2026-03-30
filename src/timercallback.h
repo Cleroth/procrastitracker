@@ -167,5 +167,5 @@ VOID CALLBACK timerfunc(HWND hwnd, UINT uMsg, UINT_PTR idEvent, DWORD dwTime) {
 
     //OutputDebugF("timercallback: %s\n", s.c_str());
 
-    if (s[0]) addtodatabase((char *)s.c_str(), st, idletime, 0);
+    if (s[0]) queueaddtodatabase((char *)s.c_str(), st, idletime, 0);
 };

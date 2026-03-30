@@ -23,7 +23,7 @@ INT_PTR CALLBACK Away(HWND hDlg, UINT message, WPARAM wParam, LPARAM lParam) {
                     getcontroltext(button, buf + strlen(buf), 100);
                     SYSTEMTIME st;
                     GetLocalTime(&st);
-                    addtodatabase(buf, st, 0, awaysecsdialog);
+                    queueaddtodatabase(buf, st, 0, awaysecsdialog);
                 }
             }
             EndDialog(hDlg, LOWORD(wParam));
@@ -40,7 +40,7 @@ void TrackAwayTime(DWORD awaysecs) {
         SYSTEMTIME st;
         GetLocalTime(&st);
         char buf[100] = "Away : Other";
-        addtodatabase(buf, st, 0, awaysecs);
+        queueaddtodatabase(buf, st, 0, awaysecs);
     } else if (awaymins < prefs[PREF_AWAY].ival) {
         if (awaydialog) {
             // if the user hadn't responded to the previous dialog, kill it

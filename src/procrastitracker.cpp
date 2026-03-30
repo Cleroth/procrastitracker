@@ -171,6 +171,8 @@ char databasemain[MAX_PATH];
 char databaseback[MAX_PATH];
 char databasetemp[MAX_PATH];
 
+void recompaccum();
+
 #include "nodedb.h"
 #include "ddeutil.h"
 
@@ -276,7 +278,6 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam) 
                 case 'AB': DialogBox(hInst, MAKEINTRESOURCE(IDD_ABOUTBOX), hWnd, About); break;
                 case 'EX': DestroyWindow(hWnd); break;
                 case 'EH': {
-                    recompaccum();
                     char requestfilename[1000];
                     if (FileRequest(hWnd, requestfilename, sizeof(requestfilename),
                                     "procrastitracker_report.html",
@@ -286,7 +287,6 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam) 
                     break;
                 }
                 case 'EF': {
-                    recompaccum();
                     char requestfilename[1000];
                     if (FileRequest(hWnd, requestfilename, sizeof(requestfilename),
                                     "exported_view.PT",
@@ -494,6 +494,7 @@ int APIENTRY _tWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPTSTR lpCm
     PathAppend(databasemain, "db.PT");
     PathAppend(databaseback, "db_BACKUP.PT");
     PathAppend(databasetemp, "db_TEMP.~PT");
+    initdatabasequeue();
     starttime = now();
     endtime = now();
     load(root, databasemain, false);
@@ -513,6 +514,7 @@ int APIENTRY _tWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPTSTR lpCm
     }
     killhookthread();
     save();
+    killdatabasequeue();
     CreateTaskBarIcon(mainhwnd, NIM_DELETE, 3);
     ddeclean();
     eventhookclean();
