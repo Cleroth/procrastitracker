@@ -320,7 +320,7 @@ struct node : SlabAllocated<node> {
         String full(concat);
         if (*concat) full.Cat(" - ");
         full.Cat(nname);
-        if (onechild && !last)
+        if (onechild && !last && this->parent && this->parent->parent)
             return onechild->treeview(depth, hWnd, parent, after, timelevel, full);
         String s;
         accum.format(s, timelevel);
