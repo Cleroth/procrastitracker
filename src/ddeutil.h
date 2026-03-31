@@ -52,6 +52,11 @@ void ddereq(char *server, char *topic, char *item, char *buf, int len) {
 
 HWINEVENTHOOK LHook = 0;
 char current_chrome_url[MAXTMPSTR] = {0};
+HWND last_chrome_hwnd = NULL;
+DWORD last_chrome_event = 0;
+LONG last_chrome_idobject = 0;
+LONG last_chrome_idchild = 0;
+bool have_last_chrome_event = false;
 
 #define DEBUG_URL 0
 
@@ -67,51 +72,72 @@ void DebugURL(LPCWSTR msg) {
     #endif
 }
 
-#ifdef MINGW32_BUG
-void WinEventProc
-#else
-void CALLBACK WinEventProc
-#endif
-    (HWINEVENTHOOK hWinEventHook, DWORD event, HWND hwnd, LONG idObject, LONG idChild,
-     DWORD dwEventThread, DWORD dwmsEventTime) {
+bool BrowserHookInvoke(HWND hwnd, DWORD event, LONG idObject, LONG idChild, bool probe,
+                       char *status = NULL, int statuslen = 0) {
+    if (status && statuslen) status[0] = 0;
     if (!hwnd) {
         DebugURL("NULL HWND\n");
-        return;
+        if (status && statuslen) {
+            strncpy(status, "No browser window handle", statuslen);
+            status[statuslen - 1] = 0;
+        }
+        return false;
     }
     char classname[MAXTMPSTR];
     if (!GetClassName(hwnd, classname, MAXTMPSTR)) {
         DebugURL("GetClassName FAIL\n");
-        return;
+        if (status && statuslen) {
+            strncpy(status, "GetClassName failed", statuslen);
+            status[statuslen - 1] = 0;
+        }
+        return false;
     }
     classname[MAXTMPSTR - 1] = 0;
     DebugURL("GetClassName: ");
     DebugURL(classname);
     DebugURL("\n");
 
-    // Getting "HwndWrapper[DefaultDomain;;$UID]" now?
-    auto is_chrome = strcmp(classname, "Chrome_WidgetWin_1") == 0;  // This can also be MS Edge
-    //auto is_firefox = strcmp(classname, "MozillaWindowClass") == 0;
-    if (!is_chrome /* && !is_firefox */) {
+    auto is_chrome = strcmp(classname, "Chrome_WidgetWin_1") == 0;
+    if (!is_chrome) {
         DebugURL("NOT CHROME/EDGE\n");
-        return;  // Early out.
+        if (status && statuslen) {
+            strncpy(status, "Last event was not Chrome/Edge", statuslen);
+            status[statuslen - 1] = 0;
+        }
+        return false;
     }
+
+    last_chrome_hwnd = hwnd;
+    last_chrome_event = event;
+    last_chrome_idobject = idObject;
+    last_chrome_idchild = idChild;
+    have_last_chrome_event = true;
 
     if (IsDebuggerPresent()) {
-        // Code below e.g. get_accValue seems to misbehave with debugger attached?
-        return;
+        if (status && statuslen) {
+            strncpy(status, "Browser probe skipped while debugger is attached", statuslen);
+            status[statuslen - 1] = 0;
+        }
+        return false;
     }
 
-    #if 1
-
+    LONGLONG totalstart = hookdiagqpc();
     IAccessible *pAcc = NULL;
     VARIANT varChild;
+    LONGLONG accessstart = hookdiagqpc();
     HRESULT hr = AccessibleObjectFromEvent(hwnd, idObject, idChild, &pAcc, &varChild);
+    LONGLONG accessus = hookdiagus(accessstart, hookdiagqpc());
+    LONGLONG valueus = 0;
+    LONGLONG nameus = 0;
+    bool matched = false;
     if ((hr == S_OK) && (pAcc != NULL)) {
         BSTR bstrName, bstrValue;
-        // FIXME: These calls, on some system, can cause message pump blocking?? which blocks
-        // the entire app.
+        LONGLONG valuestart = hookdiagqpc();
         pAcc->get_accValue(varChild, &bstrValue);
+        valueus = hookdiagus(valuestart, hookdiagqpc());
+        LONGLONG namestart = hookdiagqpc();
         pAcc->get_accName(varChild, &bstrName);
+        nameus = hookdiagus(namestart, hookdiagqpc());
         DebugURL(bstrName);
         DebugURL(" = ");
         DebugURL(bstrValue);
@@ -120,6 +146,7 @@ void CALLBACK WinEventProc
             WideCharToMultiByte(CP_UTF8, 0, bstrValue, -1, current_chrome_url, MAXTMPSTR, NULL,
                 NULL);
             current_chrome_url[MAXTMPSTR - 1] = 0;
+            matched = true;
             DebugURL("Got URL:");
             DebugURL(current_chrome_url);
             DebugURL("\n");
@@ -130,64 +157,26 @@ void CALLBACK WinEventProc
     } else {
         DebugURL("AccessibleObjectFromEvent fail\n");
     }
-
-    #else
-
-    // New way: https://stackoverflow.com/questions/48504300/get-active-tab-url-in-chrome-with-c
-    // This doesn't work .. the URL is always empty.
-    // And spams OLEAUT "Library not registered" errors.
-
-    for (;;) {
-        CComQIPtr<IUIAutomation> uia;
-        if (FAILED(uia.CoCreateInstance(CLSID_CUIAutomation)) || !uia) {
-            DebugURL("CoCreateInstance fail\n");
-            break;
-        }
-
-        CComPtr<IUIAutomationElement> root;
-        if (FAILED(uia->ElementFromHandle(hwnd, &root)) || !root) {
-            DebugURL("ElementFromHandle fail\n");
-            break;
-        }
-
-        CComPtr<IUIAutomationCondition> condition;
-
-        //URL's id is 0xC354, or use UIA_EditControlTypeId for 1st edit box
-        if (FAILED(uia->CreatePropertyCondition(UIA_ControlTypePropertyId,
-            CComVariant(0xC354), &condition))) {
-            DebugURL("CreatePropertyCondition fail\n");
-            break;
-        }
-
-        //or use edit control's name instead
-        //uia->CreatePropertyCondition(UIA_NamePropertyId,
-        //      CComVariant(L"Address and search bar"), &condition);
-
-        CComPtr<IUIAutomationElement> edit;
-        if (FAILED(root->FindFirst(TreeScope_Descendants, condition, &edit))
-            || !edit) {
-            DebugURL("FindFirst fail\n");
-            break;
-            continue; //maybe we don't have the right tab, continue...
-        }
-
-        CComVariant url;
-        if (FAILED(edit->GetCurrentPropertyValue(UIA_ValueValuePropertyId, &url))) {
-            DebugURL("GetCurrentPropertyValue fail\n");
-            break;
-        }
-
-        WideCharToMultiByte(CP_UTF8, 0, url.bstrVal, -1, current_chrome_url, MAXTMPSTR, NULL,
-            NULL);
-        current_chrome_url[MAXTMPSTR - 1] = 0;
-        DebugURL("Got URL:");
-        DebugURL(current_chrome_url);
-        DebugURL("\n");
-
-        break;
+    LONGLONG totalus = hookdiagus(totalstart, hookdiagqpc());
+    hookdiagrecordbrowser(totalus, accessus, valueus, nameus, hwnd, event, idObject, idChild,
+                          classname, hr, matched, probe);
+    if (status && statuslen) {
+        sprintf_s(status, statuslen,
+                  probe ? "Probe %s: total=%lld us, AOFE=%lld us, value=%lld us, name=%lld us"
+                        : "Callback %s: total=%lld us, AOFE=%lld us, value=%lld us, name=%lld us",
+                  matched ? "matched" : "no match", totalus, accessus, valueus, nameus);
     }
+    return true;
+}
 
-    #endif
+#ifdef MINGW32_BUG
+void WinEventProc
+#else
+void CALLBACK WinEventProc
+#endif
+    (HWINEVENTHOOK hWinEventHook, DWORD event, HWND hwnd, LONG idObject, LONG idChild,
+     DWORD dwEventThread, DWORD dwmsEventTime) {
+    BrowserHookInvoke(hwnd, event, idObject, idChild, false);
 }
 
 void eventhookinit() {
@@ -200,5 +189,53 @@ void eventhookinit() {
 void eventhookclean() {
     if (LHook == 0) return;
     UnhookWinEvent(LHook);
+    LHook = 0;
     CoUninitialize();
+}
+
+bool browserhookenabled() { return LHook != 0; }
+
+void setbrowserhookenabled(bool enabled) {
+    if (enabled)
+        eventhookinit();
+    else
+        eventhookclean();
+}
+
+bool runbrowserhookprobe(int iterations, char *status, int statuslen) {
+    if (status && statuslen) status[0] = 0;
+    if (!have_last_chrome_event) {
+        if (status && statuslen) {
+            strncpy(status, "No Chrome/Edge event captured yet. Focus a browser window first.",
+                    statuslen);
+            status[statuslen - 1] = 0;
+        }
+        return false;
+    }
+    if (iterations < 1) iterations = 1;
+    char laststatus[256] = "";
+    int successes = 0;
+    loop(i, iterations) {
+        if (BrowserHookInvoke(last_chrome_hwnd, last_chrome_event, last_chrome_idobject,
+                              last_chrome_idchild, true, laststatus, sizeof(laststatus)))
+            successes++;
+    }
+    if (status && statuslen) {
+        if (iterations == 1) {
+            strncpy(status, laststatus, statuslen);
+            status[statuslen - 1] = 0;
+        } else if (!successes) {
+            sprintf_s(status, statuslen, "All %d browser probes failed. Last result: %s",
+                      iterations, laststatus[0] ? laststatus : "Browser probe failed.");
+        } else if (successes == iterations) {
+            sprintf_s(status, statuslen,
+                      "Ran %d browser probes against the last Chrome/Edge event", iterations);
+        } else {
+            sprintf_s(status, statuslen,
+                      "Ran %d browser probes: %d succeeded, %d failed. Last result: %s",
+                      iterations, successes, iterations - successes,
+                      laststatus[0] ? laststatus : "n/a");
+        }
+    }
+    return successes > 0;
 }

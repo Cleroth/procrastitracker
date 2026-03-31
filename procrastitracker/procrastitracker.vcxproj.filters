@@ -51,6 +51,9 @@
     <ClInclude Include="..\src\ddeutil.h">
       <Filter>app\win32</Filter>
     </ClInclude>
+    <ClInclude Include="..\src\hookdiag.h">
+      <Filter>app\win32</Filter>
+    </ClInclude>
     <ClInclude Include="..\src\inputdlg.h">
       <Filter>app\win32</Filter>
     </ClInclude>
@@ -87,6 +90,9 @@
       <Filter>app</Filter>
     </ClCompile>
     <ClCompile Include="..\src\inputdlg.cpp">
+      <Filter>app\win32</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\hookdiag.cpp">
       <Filter>app\win32</Filter>
     </ClCompile>
     <ClCompile Include="..\src\IdleTracker.cpp">

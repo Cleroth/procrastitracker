@@ -2,6 +2,7 @@
 #include "stdafx.h"
 #include "resource.h"
 #include "IdleTracker.h"
+#include "hookdiag.h"
 
 #include "win32tools.h"
 #include "inputdlg.h"
@@ -275,6 +276,9 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam) 
                 case 'AS':
                     DialogBox(hInst, MAKEINTRESOURCE(IDD_PROPPAGE_MEDIUM), hWnd, Prefs);
                     break;
+                case 'DG':
+                    openhookdiagwindow(hWnd);
+                    break;
                 case 'AB': DialogBox(hInst, MAKEINTRESOURCE(IDD_ABOUTBOX), hWnd, About); break;
                 case 'EX': DestroyWindow(hWnd); break;
                 case 'EH': {
@@ -339,6 +343,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam) 
 
                 AppendMenuA(myMenu, MF_STRING, 'ST', "View Statistics..");
                 AppendMenuA(myMenu, MF_STRING, 'AS', "Advanced Settings..");
+                AppendMenuA(myMenu, MF_STRING, 'DG', "Hook Diagnostics..");
                 AppendMenuA(myMenu, MF_STRING, 'EH', "Export HTML (view)..");
                 AppendMenuA(myMenu, MF_STRING, 'EF', "Export database (view) ..");
                 AppendMenuA(myMenu, MF_STRING, 'MD', "Merge in database..");
@@ -452,6 +457,7 @@ int APIENTRY _tWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPTSTR lpCm
         SendMessageA(hWnd, WM_COMMAND, wParam, NULL);
         return 0;
     }
+    hookdiaginit();
     if (!ddeinit()) panic("PT: Cannot initialize DDE");
     // This is for chrome only:
     eventhookinit();
@@ -509,6 +515,8 @@ int APIENTRY _tWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPTSTR lpCm
     launchhookthread();
     MSG msg;
     while (GetMessage(&msg, NULL, 0, 0)) {
+        if ((awaydialog && IsDialogMessage(awaydialog, &msg)) || hookdiagisdialogmessage(&msg))
+            continue;
         TranslateMessage(&msg);
         DispatchMessage(&msg);
     }
@@ -518,6 +526,7 @@ int APIENTRY _tWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPTSTR lpCm
     CreateTaskBarIcon(mainhwnd, NIM_DELETE, 3);
     ddeclean();
     eventhookclean();
+    hookdiagcleanup();
     #ifdef _DEBUG
         delete root;
         strpool.clear();

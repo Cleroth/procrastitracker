@@ -21,12 +21,15 @@
 #include <windows.h>
 #define abs(x) ((x) < 0 ? -(x) : (x))  // don't want to have to rely on libc
 
+#include "hookdiag.h"
+
 HHOOK g_hHkKeyboardLL = NULL;  // handle to the keyboard hook
 HHOOK g_hHkMouseLL = NULL;     // handle to the mouse hook
 DWORD g_dwLastTick = 0;        // tick time of last input event
 LONG g_mouseLocX = -1;         // x-location of mouse position
 LONG g_mouseLocY = -1;         // y-location of mouse position
 int key = 0, lmb = 0, rmb = 0, scr = 0;
+volatile LONG g_hooksEnabled = 0;
 
 extern void panic(char *);
 
@@ -54,16 +57,19 @@ extern void CheckAway(DWORD lasttime, DWORD curtime);
 
 LRESULT CALLBACK KeyboardTracker(int code, WPARAM wParam, LPARAM lParam) {
     if (code == HC_ACTION) {
+        LONGLONG start = hookdiagqpc();
         DWORD curtime = GetTickCount();
         CheckAway(g_dwLastTick, curtime);
         g_dwLastTick = curtime;
         key++;
+        hookdiagrecordkeyboard(hookdiagus(start, hookdiagqpc()), wParam);
     }
     return ::CallNextHookEx(g_hHkKeyboardLL, code, wParam, lParam);
 }
 
 LRESULT CALLBACK MouseTracker(int code, WPARAM wParam, LPARAM lParam) {
     if (code == HC_ACTION) {
+        LONGLONG start = hookdiagqpc();
         DWORD curtime = GetTickCount();
         MSLLHOOKSTRUCT *pStruct = (MSLLHOOKSTRUCT *)lParam;
         switch (wParam) {
@@ -77,6 +83,7 @@ LRESULT CALLBACK MouseTracker(int code, WPARAM wParam, LPARAM lParam) {
             CheckAway(g_dwLastTick, curtime);
             g_dwLastTick = curtime;
         }
+        hookdiagrecordmouse(hookdiagus(start, hookdiagqpc()), wParam);
     }
     return ::CallNextHookEx(g_hHkMouseLL, code, wParam, lParam);
 }
@@ -99,6 +106,7 @@ bool inputhooksetup() {  // WINVER = 0x0501 for Windows XP, it needs non-NULL hI
             g_hHkMouseLL = SetWindowsHookEx(WH_MOUSE_LL, MouseTracker, hInst, 0);
     #endif
     g_dwLastTick = GetTickCount();
+    InterlockedExchange(&g_hooksEnabled, g_hHkKeyboardLL && g_hHkMouseLL ? 1 : 0);
     return g_hHkKeyboardLL && g_hHkMouseLL;
 }
 
@@ -107,6 +115,7 @@ void inputhookcleanup() {
     if (g_hHkMouseLL) UnhookWindowsHookEx(g_hHkMouseLL);
     g_hHkKeyboardLL = NULL;
     g_hHkMouseLL = NULL;
+    InterlockedExchange(&g_hooksEnabled, 0);
 }
 
 void reinstall_hooks() {
@@ -133,6 +142,12 @@ DWORD WINAPI hookproc(LPVOID) {
                     // OutputDebugStringA("restarting hooks!\n");
                     reinstall_hooks();
                     break;
+                case WM_APP + 2:
+                    inputhookcleanup();
+                    break;
+                case WM_APP + 3:
+                    inputhooksetup();
+                    break;
             }
     }
     inputhookcleanup();
@@ -155,3 +170,7 @@ void killhookthread() {
 }
 
 void threadrestarthook() { PostThreadMessage(tid, WM_APP + 1, 0, 0); }
+
+void setglobalhooksenabled(bool enabled) { PostThreadMessage(tid, enabled ? WM_APP + 3 : WM_APP + 2, 0, 0); }
+
+bool globalhooksenabled() { return g_hooksEnabled != 0; }

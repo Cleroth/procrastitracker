@@ -17,6 +17,7 @@ HANDLE queuedbthread = NULL;
 queueddbentry *queuedbhead = NULL;
 queueddbentry *queuedbtail = NULL;
 bool queuedbshutdown = false;
+LONG queuedbdepth = 0;
 
 DWORD WINAPI queueddatabaseproc(LPVOID) {
     for (;;) {
@@ -24,11 +25,14 @@ DWORD WINAPI queueddatabaseproc(LPVOID) {
         for (;;) {
             queueddbentry *entry = NULL;
             bool shutdown = false;
+            LONG pendingdepth = 0;
             EnterCriticalSection(&queuedblock);
             if (queuedbhead) {
                 entry = queuedbhead;
                 queuedbhead = entry->next;
                 if (!queuedbhead) queuedbtail = NULL;
+                queuedbdepth--;
+                pendingdepth = queuedbdepth;
             } else {
                 shutdown = queuedbshutdown;
                 if (!shutdown) ResetEvent(queuedbworkevent);
@@ -39,7 +43,9 @@ DWORD WINAPI queueddatabaseproc(LPVOID) {
                 if (shutdown) return 0;
                 break;
             }
+            LONGLONG start = hookdiagqpc();
             addtodatabase(entry->elements, entry->st, entry->idletime, entry->awaysecs);
+            hookdiagrecorddbwork(hookdiagus(start, hookdiagqpc()), pendingdepth, entry->elements);
             delete entry;
         }
     }
@@ -73,19 +79,24 @@ void killdatabasequeue() {
     queuedbthread = NULL;
     queuedbworkevent = NULL;
     queuedbidleevent = NULL;
+    queuedbdepth = 0;
     DeleteCriticalSection(&queuedblock);
     DeleteCriticalSection(&databaselock);
 }
 
 void queueaddtodatabase(char *elements, SYSTEMTIME &st, DWORD idletime, DWORD awaysecs) {
+    LONGLONG start = hookdiagqpc();
+    LONG pendingdepth = 0;
     if (!*elements) return;
     queueddbentry *entry = new queueddbentry;
+    char diagelements[sizeof(entry->elements)];
     entry->next = NULL;
     entry->st = st;
     entry->idletime = idletime;
     entry->awaysecs = awaysecs;
     strncpy(entry->elements, elements, sizeof(entry->elements));
     entry->elements[sizeof(entry->elements) - 1] = 0;
+    memcpy(diagelements, entry->elements, sizeof(diagelements));
     EnterCriticalSection(&queuedblock);
     if (queuedbtail) {
         queuedbtail->next = entry;
@@ -93,9 +104,12 @@ void queueaddtodatabase(char *elements, SYSTEMTIME &st, DWORD idletime, DWORD aw
         queuedbhead = entry;
     }
     queuedbtail = entry;
+    queuedbdepth++;
+    pendingdepth = queuedbdepth;
     ResetEvent(queuedbidleevent);
     SetEvent(queuedbworkevent);
     LeaveCriticalSection(&queuedblock);
+    hookdiagrecorddbqueue(hookdiagus(start, hookdiagqpc()), pendingdepth, diagelements);
 }
 
 void save(bool filtered = false, char *givenfilename = NULL) {
