@@ -51,8 +51,10 @@ struct node : SlabAllocated<node> {
     void remove(node *o) {
         if (onechild == o)
             onechild = NULL;
-        else if (ht)
+        else if (ht) {
             ht->remove(o->nname);
+            if (!ht->numelems) DELETEP(ht);
+        }
         delete o;
     }
 

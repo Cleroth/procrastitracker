@@ -77,6 +77,7 @@
 #define IDC_STATIC_HOOKDIAG_STATUS      1054
 #define IDC_STATIC_HOOKDIAG_SUMMARY     1055
 #define IDC_STATIC_HOOKDIAG_LOG         1056
+#define IDC_BUTTON_DELETEENTRY          1057
 #define IDC_STATIC                      -1
 
 // Next default values for new objects
@@ -86,7 +87,7 @@
 #define _APS_NO_MFC                     1
 #define _APS_NEXT_RESOURCE_VALUE        142
 #define _APS_NEXT_COMMAND_VALUE         32772
-#define _APS_NEXT_CONTROL_VALUE         1057
+#define _APS_NEXT_CONTROL_VALUE         1058
 #define _APS_NEXT_SYMED_VALUE           110
 #endif
 #endif

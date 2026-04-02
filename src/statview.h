@@ -86,11 +86,13 @@ void redrawtreeview() {
 void syncflattencontrol(HWND hDlg) {
     HWND flattencontrol = GetDlgItem(hDlg, IDC_CHECK_FLATTEN);
     HWND flattenhistory = GetDlgItem(hDlg, IDC_BUTTON_FLATTENHISTORY);
+    HWND deleteentry = GetDlgItem(hDlg, IDC_BUTTON_DELETEENTRY);
     bool enabled = selectednode && selectednode != root;
     SendMessage(flattencontrol, BM_SETCHECK,
                 enabled && selectednode->flatten ? BST_CHECKED : BST_UNCHECKED, 0);
     EnableWindow(flattencontrol, enabled);
     EnableWindow(flattenhistory, enabled && (selectednode->onechild || selectednode->ht));
+    EnableWindow(deleteentry, enabled);
 }
 
 void recompaccum() {
@@ -177,6 +179,45 @@ bool ApplyTagToNode(HWND hDlg) {
     return changed;
 }
 
+bool DeleteSelectedNode(HWND hDlg) {
+    if (!selectednode || selectednode == root) {
+        syncflattencontrol(hDlg);
+        return false;
+    }
+    node *target = selectednode->firstinchain();
+    if (!target->parent) {
+        syncflattencontrol(hDlg);
+        return false;
+    }
+    String label(target->nname);
+    for (node *shown = target; shown != selectednode && shown->onechild; shown = shown->onechild) {
+        label.Cat(" - ");
+        label.Cat(shown->onechild->nname);
+    }
+    char msg[512];
+    sprintf_s(msg, sizeof(msg),
+              "Delete \"%s\" and all of its history and sub-entries?\n\nThis cannot be undone.",
+              label.c_str());
+    if (MessageBoxA(hDlg, msg, "Delete Entry", MB_ICONWARNING | MB_YESNO | MB_DEFBUTTON2) !=
+        IDYES)
+        return false;
+    flushdatabasequeue();
+    EnterCriticalSection(&databaselock);
+    node *parent = target->parent;
+    parent->remove(target);
+    for (node *empty = parent; empty && empty->parent && !empty->last && !empty->onechild && !empty->ht;) {
+        node *next = empty->parent;
+        next->remove(empty);
+        empty = next;
+    }
+    selectednode = NULL;
+    prevselectednode = NULL;
+    changesmade = true;
+    LeaveCriticalSection(&databaselock);
+    rendertree(hDlg, true);
+    return true;
+}
+
 long handleNotify(HWND hWndDlg, int nIDCtrl, LPNMHDR pNMHDR) {
     switch (pNMHDR->code) {
         case NM_CUSTOMDRAW: {
@@ -254,6 +295,9 @@ long handleNotify(HWND hWndDlg, int nIDCtrl, LPNMHDR pNMHDR) {
                 }
             else if (selectednode)
                 switch (kd->wVKey) {
+                    case VK_DELETE:
+                        if (DeleteSelectedNode(hWndDlg)) return TRUE;
+                        return TRUE;
                     case 'T':  // Apply tag to node.
                     {
                         if (ApplyTagToNode(hWndDlg)) return TRUE;
@@ -539,6 +583,10 @@ INT_PTR CALLBACK Stats(HWND hDlg, UINT message, WPARAM wParam, LPARAM lParam) {
                     if (sel < 0) break;
                     SetFocus(taglist);
                     ListView_EditLabel(taglist, sel);
+                    break;
+                }
+                case IDC_BUTTON_DELETEENTRY: {
+                    if (DeleteSelectedNode(hDlg)) return (INT_PTR)TRUE;
                     break;
                 }
                 case IDC_BUTTON_FLATTENHISTORY: {
