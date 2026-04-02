@@ -60,7 +60,7 @@ tag tags[MAXTAGS] = {
     {"project 8", 0xB0B0B0, NULL, NULL},
 };
 
-const int FILE_FORMAT_VERSION = 15;
+const int FILE_FORMAT_VERSION = 16;
 
 extern char databasemain[];
 extern char databaseback[];
@@ -159,6 +159,8 @@ numeditbox prefs[NUM_PREFS] = {
     {NULL, 0, 0, 9999, IDC_EDIT10},
     {NULL, 0, 0, 23, IDC_EDIT11},
 };
+
+DWORD browserhookpersistenabled = 1;
 
 int statnodes = 0, statdays = 0, statht = 0, statleaf = 0, statone = 0;
 char filterstrcontents[100] = "";
@@ -459,8 +461,6 @@ int APIENTRY _tWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPTSTR lpCm
     }
     hookdiaginit();
     if (!ddeinit()) panic("PT: Cannot initialize DDE");
-    // This is for chrome only:
-    eventhookinit();
     WNDCLASSEX wcex;
     wcex.cbSize = sizeof(WNDCLASSEX);
     wcex.style = CS_HREDRAW | CS_VREDRAW;
@@ -504,6 +504,7 @@ int APIENTRY _tWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPTSTR lpCm
     starttime = now();
     endtime = now();
     load(root, databasemain, false);
+    if (browserhookpersistenabled) eventhookinit();
     firstday = starttime;
     lastsavetime = GetTickCount();
     #ifdef MINGW32_BUG

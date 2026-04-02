@@ -129,6 +129,7 @@ void save(bool filtered = false, char *givenfilename = NULL) {
     wint(f, minfilter.ival * 60);
     wint(f, foldlevel);
     loop(i, NUM_PREFS) wint(f, prefs[i].ival);
+    wint(f, browserhookpersistenabled);
     root->save(f, filtered);
     if (gzclose(f) != Z_OK) panic("PT: could not finish writing database file");
     if (!givenfilename) {
@@ -155,7 +156,7 @@ void save(bool filtered = false, char *givenfilename = NULL) {
 
 // NOTE: this function should only overwrite globals it gets by argument, see callers.
 void loadglobals(gzFile f, int version, numeditbox *prefs, tag *tags, numeditbox &minfilter,
-                 DWORD &foldlevel) {
+                 DWORD &foldlevel, DWORD &browserhookpersistenabled) {
     // FF: int numtags
     int ntags = rint(f);
     if (ntags > MAXTAGS) panic("PT: wrong number of tags in file");
@@ -190,6 +191,7 @@ void loadglobals(gzFile f, int version, numeditbox *prefs, tag *tags, numeditbox
         if (version >= 13) { prefs[PREF_AWAYAUTO].ival = rint(f); }
         if (version >= 14) { prefs[PREF_DAYSTART].ival = rint(f); }
     }
+    if (version >= 16) browserhookpersistenabled = rint(f);
 }
 
 
@@ -209,9 +211,12 @@ void load(node *root, char *fn, bool merge) {
             tag _tags[MAXTAGS];
             numeditbox _minfilter;
             DWORD _foldlevel;
-            loadglobals(f, version, _prefs, _tags, _minfilter, _foldlevel);
+            DWORD _browserhookpersistenabled = 1;
+            loadglobals(f, version, _prefs, _tags, _minfilter, _foldlevel,
+                        _browserhookpersistenabled);
         } else {
-            loadglobals(f, version, prefs, tags, minfilter, foldlevel);
+            loadglobals(f, version, prefs, tags, minfilter, foldlevel,
+                        browserhookpersistenabled);
         }
         if (version == 8) loop(i, 24) gzgetc_s(f);
     }

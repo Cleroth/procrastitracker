@@ -196,6 +196,8 @@ void eventhookclean() {
 bool browserhookenabled() { return LHook != 0; }
 
 void setbrowserhookenabled(bool enabled) {
+    browserhookpersistenabled = enabled;
+    changesmade = true;
     if (enabled)
         eventhookinit();
     else
